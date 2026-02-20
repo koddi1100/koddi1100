@@ -692,6 +692,13 @@
     const hasValue = monthlyDays.value !== "";
     if (!hasValue) return;
     const monthly = Number(monthlyDays.value || 0);
+    trainees.forEach(t => { t.planned = monthly; });
+  }
+
+  function syncPlannedDaysWithMonthly(){
+    const hasValue = monthlyDays.value !== "";
+    if (!hasValue) return;
+    const monthly = Number(monthlyDays.value || 0);
     trainees.forEach(t => {
       if (t.planned === "" || t.planned === null || t.planned === undefined) t.planned = monthly;
     });
