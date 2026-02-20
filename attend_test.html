@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>출석부(웹 입력 → PDF 다운로드) 샘플</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+
+  <style>
+    :root {
+      --border: #222;
+      --bg: #f7f7f7;
+      --muted: #666;
+      --col-no: 44px;
+      --col-name: 160px;
+    }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; margin: 16px; }
+    h1 { margin: 0 0 12px; font-size: 18px; }
+    .toolbar { display:flex; gap: 8px; align-items:center; flex-wrap: wrap; margin-bottom: 10px; }
+    .btn {
+      border: 1px solid var(--border); background: #fff; padding: 8px 12px; cursor: pointer;
+      border-radius: 6px;
+    }
+    .btn.primary { background:#111; color:#fff; }
+    .btn:active { transform: translateY(1px); }
+    .note { color: var(--muted); font-size: 12px; }
+
+    /* 입력 영역 */
+    .card { border:1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .field { display:flex; gap: 8px; align-items:center; }
+    .field label { width: 120px; font-size: 13px; }
+    input[type="text"], input[type="number"], select, input[type="time"] {
+      flex: 1;
+      border:1px solid #aaa; border-radius: 6px; padding: 6px 8px; font-size: 13px;
+    }
+    .inline { display:flex; gap:6px; align-items:center; flex:1; }
+    .calc { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+    /* 출력 영역(PDF로 저장될 영역) */
+    #printArea { border: 2px solid var(--border); padding: 12px; border-radius: 10px; }
+    .headerRow { display:flex; justify-content: space-between; align-items:flex-end; gap:10px; }
+    .title { font-weight:700; font-size: 16px; }
+    .meta { font-size: 12px; color: var(--muted); text-align:right; }
+
+    /* 표 */
+    .tableWrap { overflow:auto; border:1px solid var(--border); border-radius: 8px; margin-top: 10px; }
+    table { border-collapse: collapse; width: max-content; min-width: 100%; background:#fff; }
+    th, td { border: 1px solid var(--border); padding: 4px 6px; font-size: 12px; text-align:center; }
+    th { background: var(--bg); position: sticky; top: 0; z-index: 2; }
+    .sticky-left {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      background: #fff;
+      width: var(--col-no);
+      min-width: var(--col-no);
+    }
+    th.sticky-left { background: var(--bg); }
+    .sticky-left-2 {
+      position: sticky;
+      left: var(--col-no);
+      z-index: 3;
+      background: #fff;
+      min-width: var(--col-name);
+    }
+    th.sticky-left-2 { background: var(--bg); }
+    .tableWrap { -webkit-overflow-scrolling: touch; }
+    .statusSelect {
+      width: 54px; border:1px solid #aaa; border-radius: 6px; padding: 2px 4px; font-size: 12px;
+      background:#fff;
+    }
+    .numInput { width: 70px; border:1px solid #aaa; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+
+    .rowLabel { font-weight: 700; background: var(--bg); }
+    .rightCols { background:#fcfcfc; }
+    .foot { display:flex; gap: 12px; align-items:center; justify-content: space-between; margin-top: 8px; font-size: 12px; }
+    .foot .muted { color: var(--muted); }
+
+    /* PDF용(가독성) */
+    @media print {
+      body { margin: 0; }
+      .card, .toolbar { display: none !important; }
+      #printArea { border: none; border-radius: 0; }
+      .tableWrap { overflow: visible; }
+      table { width: 100%; }
+    }
+    /* 성명 셀 안 레이아웃 */
+    .nameCell { display: flex; gap: 6px; align-items: center; }
+    .nameInput {
+      width: 100%; min-width: 90px; border: 1px solid #aaa; border-radius: 6px;
+      padding: 6px 8px; font-size: 13px;
+    }
+    /* 테이블 안 미니 버튼 */
+    .miniBtn {
+      border: 1px solid #aaa; background: #fff; padding: 4px 8px;
+      border-radius: 6px; font-size: 12px; cursor: pointer;
+    }
+    .miniBtn:active { transform: translateY(1px); }
+
+    @media (max-width: 720px) {
+      body { margin: 12px; }
+      h1 { font-size: 16px; }
+      .grid { grid-template-columns: 1fr; }
+      .field label { width: 96px; }
+      .headerRow { flex-direction: column; align-items: flex-start; }
+      .meta { text-align: left; }
+      :root { --col-no: 38px; --col-name: 140px; }
+      th, td { font-size: 11px; padding: 3px 5px; }
+      .statusSelect { width: 52px; }
+      .numInput { width: 62px; }
+      .nameCell { flex-direction: column; align-items: stretch; }
+      .miniBtn { width: 100%; }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>출석부 웹 입력 → PDF 다운로드 샘플</h1>
+
+  <div class="toolbar">
+    <button class="btn" id="addRowBtn">훈련생 행 추가</button>
+    <button class="btn" id="fillDemoBtn">샘플데이터 채우기</button>
+    <button class="btn primary" id="downloadPdfBtn">PDF 다운로드</button>
+	<button class="btn" id="downloadXlsxBtn">Excel 다운로드</button>
+    <button class="btn" id="exportJsonBtn">JSON 내보내기</button>
+    <button class="btn" id="importJsonBtn">JSON 불러오기</button>
+    <input type="file" id="importJsonFile" accept="application/json" style="display:none" />
+    <span class="note">출퇴근현황: 출석(/), 결석(X), 지각(O/), 조퇴(/O), 훈련없음(/X), 지원고용훈련(=)</span>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div class="field"><label>기관명</label><input type="text" id="orgName" placeholder="기관명 입력" /></div>
+      <div class="field">
+        <label>훈련구분</label>
+        <select id="trainType">
+          <option value="">선택</option>
+          <option>집합훈련</option>
+          <option>원격훈련</option>
+          <option>혼합</option>
+          <option>기타</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>기관 월간훈련일수</label>
+        <input type="number" id="monthlyDays" min="0" step="1" placeholder="예: 20" />
+        <span class="calc" id="monthlyDaysHint"></span>
+      </div>
+      <div class="field">
+        <label>출석년월</label>
+        <div class="inline">
+          <select id="yearSel"></select>
+          <select id="monthSel"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>일일훈련시간</label>
+        <div class="inline">
+          <input type="time" id="trainStart" /> <span>~</span> <input type="time" id="trainEnd" />
+          <span class="calc" id="trainDurText">/ 일 훈련시간: -</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>식사시간</label>
+        <div class="inline">
+          <input type="time" id="mealStart" /> <span>~</span> <input type="time" id="mealEnd" />
+          <span class="calc" id="mealDurText">/ 식사시간: -</span>
+        </div>
+      </div>
+      <div class="field"><label>담당자</label><input type="text" id="manager" placeholder="담당자 입력" /></div>
+      <div class="field"><label>비고</label><input type="text" id="remark" placeholder="비고 입력" /></div>
+    </div>
+    <div class="note" style="margin-top:8px;">
+      • 일 훈련시간 = (훈련종료-훈련시작) - (식사종료-식사시작) 단순 차감(겹침/역전 시간은 0 처리).<br/>
+      • 일차(훈련일) 누적은 해당 일자에 모든 훈련생이 "훈련없음(/X)" 상태일 때만 하루 제외됩니다.<br/>
+      • 월간훈련일수는 아래 자동계산값을 참고해 직접 입력해도 됩니다.
+    </div>
+  </div>
+
+  <div id="printArea">
+    <div class="headerRow">
+      <div>
+        <div class="title">출석부</div>
+        <div class="meta" id="metaLeft"></div>
+      </div>
+      <div class="meta" id="metaRight"></div>
+    </div>
+    <div class="note">모바일에서는 표를 좌우로 스와이프해서 입력하세요.</div>
+    <div class="tableWrap">
+      <table id="attTable"></table>
+    </div>
+
+    <div class="foot">
+      <div class="muted" id="footLeft"></div>
+      <div class="muted" id="footRight"></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ===== 유틸 =====
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const daysInMonth = (y, m) => new Date(y, m, 0).getDate();
+  const weekdayKo = (dateObj) => ["일","월","화","수","목","금","토"][dateObj.getDay()];
+  const exportJsonBtn = document.getElementById("exportJsonBtn");
+  const importJsonBtn = document.getElementById("importJsonBtn");
+  const importJsonFile = document.getElementById("importJsonFile");
+
+  const timeToMin = (hhmm) => {
+    if (!hhmm) return null;
+    const [h, m] = hhmm.split(":").map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return h * 60 + m;
+  };
+  const minToHM = (mins) => {
+    mins = Math.max(0, Math.round(mins));
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}시간 ${m}분`;
+  };
+
+  // 상태값 정의
+  const STATUS = [
+    { v: "",  t: "" },
+    { v: "/", t: "/" },    // 출석
+    { v: "X", t: "X" },    // 결석
+    { v: "O/", t: "O/" },  // 지각
+    { v: "/O", t: "/O" },  // 조퇴
+    { v: "/X", t: "/X" },  // 훈련없음
+    { v: "=",  t: "=" }    // 지원고용훈련
+  ];
+
+  // ===== DOM =====
+  const orgName = document.getElementById("orgName");
+  const trainType = document.getElementById("trainType");
+  const monthlyDays = document.getElementById("monthlyDays");
+  const yearSel = document.getElementById("yearSel");
+  const monthSel = document.getElementById("monthSel");
+  const trainStart = document.getElementById("trainStart");
+  const trainEnd = document.getElementById("trainEnd");
+  const mealStart = document.getElementById("mealStart");
+  const mealEnd = document.getElementById("mealEnd");
+  const manager = document.getElementById("manager");
+  const remark = document.getElementById("remark");
+
+  const trainDurText = document.getElementById("trainDurText");
+  const mealDurText = document.getElementById("mealDurText");
+  const monthlyDaysHint = document.getElementById("monthlyDaysHint");
+
+  const metaLeft = document.getElementById("metaLeft");
+  const metaRight = document.getElementById("metaRight");
+  const footLeft = document.getElementById("footLeft");
+  const footRight = document.getElementById("footRight");
+
+  const attTable = document.getElementById("attTable");
+
+  const addRowBtn = document.getElementById("addRowBtn");
+  const fillDemoBtn = document.getElementById("fillDemoBtn");
+  const downloadPdfBtn = document.getElementById("downloadPdfBtn");
+    const downloadXlsxBtn = document.getElementById("downloadXlsxBtn");
+
+
+  // ===== 상태(데이터) =====
+  let trainees = [];
+  let batchState = {}; // 일괄입력 상태 { 1: { checked: true, status: "/X" } }
+  let currentGlobalBatchStatus = "/X"; // 기본 일괄입력 선택값
+  let currentY = 2026;
+  let currentM = 2;
+
+  let monthStore = {};
+  let currentKey = null;
+
+  const ymKey = (y, m) => `${y}-${pad2(m)}`;
+  const deepCopy = (v) => JSON.parse(JSON.stringify(v));
+
+  function saveMonthState(key){
+    if (!key) return;
+    monthStore[key] = {
+      batchState: deepCopy(batchState),
+      trainees: deepCopy(trainees),
+    };
+  }
+
+  function loadMonthState(key){
+    const saved = monthStore[key];
+    if (!saved) return false;
+    
+    // 호환성: 이전 JSON 데이터(noTraining)가 있다면 batchState 형태로 변환
+    if (saved.noTraining) {
+      batchState = {};
+      for(const [k, v] of Object.entries(saved.noTraining)){
+        batchState[k] = { checked: !!v, status: !!v ? "/X" : "" };
+      }
+    } else {
+      batchState = deepCopy(saved.batchState || {});
+    }
+    trainees = deepCopy(saved.trainees || []);
+    return true;
+  }
+
+  function initMonthState(y, m){
+    batchState = {};
+    const dmax = daysInMonth(y, m);
+    // 주말 기본 훈련없음 일괄적용 세팅
+    for (let d=1; d<=dmax; d++){
+      const wd = new Date(y, m-1, d).getDay();
+      if (wd === 0 || wd === 6) {
+        batchState[d] = { checked: true, status: "/X" };
+      } else {
+        batchState[d] = { checked: false, status: "" };
+      }
+    }
+
+    if (trainees.length > 0) {
+      trainees = trainees.map(t => {
+        const daily = {};
+        for(let d=1; d<=dmax; d++) {
+          if (batchState[d].checked) daily[d] = batchState[d].status;
+        }
+        return { name: t.name || "", planned: 0, daily };
+      });
+    } else {
+      const daily = {};
+      for(let d=1; d<=dmax; d++) {
+        if (batchState[d].checked) daily[d] = batchState[d].status;
+      }
+      trainees = [{ name: "", planned: 0, daily }];
+    }
+  }
+
+  function handleYearMonthChange(){
+    saveMonthState(currentKey);
+    const y = Number(yearSel.value);
+    const m = Number(monthSel.value);
+    currentY = y; currentM = m;
+    const key = ymKey(y, m);
+    currentKey = key;
+
+    if (!loadMonthState(key)) initMonthState(y, m);
+    renderTable();
+  }
+
+  // ===== 년/월 셀렉트 구성 =====
+  function buildYearMonthSelect() {
+    yearSel.innerHTML = ""; monthSel.innerHTML = "";
+    for (let y = 2024; y <= 2030; y++) {
+      const opt = document.createElement("option"); opt.value = String(y); opt.textContent = `${y}년`;
+      yearSel.appendChild(opt);
+    }
+    for (let m = 1; m <= 12; m++) {
+      const opt = document.createElement("option"); opt.value = String(m); opt.textContent = `${m}월`;
+      monthSel.appendChild(opt);
+    }
+    yearSel.value = String(currentY); monthSel.value = String(currentM);
+  }
+
+  // ===== 시간 계산 =====
+  function updateTimeCalcs() {
+    const tS = timeToMin(trainStart.value); const tE = timeToMin(trainEnd.value);
+    const mS = timeToMin(mealStart.value); const mE = timeToMin(mealEnd.value);
+
+    let mealDur = 0;
+    if (mS != null && mE != null && mE > mS) mealDur = mE - mS;
+    mealDurText.textContent = `/ 식사시간: ${mS != null && mE != null ? minToHM(mealDur) : "-"}`;
+
+    let trainDurRaw = 0;
+    if (tS != null && tE != null && tE > tS) trainDurRaw = tE - tS;
+
+    const trainDur = Math.max(0, trainDurRaw - mealDur);
+    trainDurText.textContent = `/ 일 훈련시간: ${tS != null && tE != null ? minToHM(trainDur) : "-"}`;
+    renderMeta();
+  }
+
+  // ===== 표 렌더링 =====
+  function renderTable() {
+    const y = Number(yearSel.value);
+    const m = Number(monthSel.value);
+    const dmax = daysInMonth(y, m);
+
+    // batchState 기본값 유지 방어
+    for (let d = 1; d <= dmax; d++) {
+      if (!batchState[d]) {
+        const wd = new Date(y, m - 1, d).getDay();
+        batchState[d] = (wd === 0 || wd === 6) ? { checked: true, status: "/X" } : { checked: false, status: "" };
+      }
+    }
+
+    // 초과 데이터 정리
+    for (const k of Object.keys(batchState)) { if (Number(k) > dmax) delete batchState[k]; }
+    for (const t of trainees) { for (const k of Object.keys(t.daily)) { if (Number(k) > dmax) delete t.daily[k]; } }
+
+    attTable.innerHTML = "";
+
+    // ---- 헤더 1: 날짜/요일 ----
+    const thead = document.createElement("thead");
+    const tr1 = document.createElement("tr");
+
+    const thNo = document.createElement("th"); thNo.textContent = "번호"; thNo.className = "sticky-left"; tr1.appendChild(thNo);
+    const thName = document.createElement("th"); thName.textContent = "성명"; thName.className = "sticky-left-2"; tr1.appendChild(thName);
+
+    for (let d = 1; d <= dmax; d++) {
+      const wd = weekdayKo(new Date(y, m - 1, d));
+      const th = document.createElement("th"); th.innerHTML = `${d}<br/>(${wd})`;
+      tr1.appendChild(th);
+    }
+
+    const rightHeaders = [
+      { key:"planned", label:"훈련생 소정출석일수" }, { key:"actual", label:"실제출근일" },
+      { key:"equiv", label:"환산출근일" }, { key:"absent", label:"결근일" },
+      { key:"lateEarly", label:"지각조퇴횟수" }, { key:"convAbsent", label:"결석환산일" },
+      { key:"supported", label:"지원고용훈련일수" }, { key:"rate", label:"출석률" },
+    ];
+    for (const rh of rightHeaders) {
+      const th = document.createElement("th"); th.textContent = rh.label; th.className = "rightCols";
+      tr1.appendChild(th);
+    }
+    thead.appendChild(tr1);
+
+    // ---- 바디: 일괄입력 셋팅 ----
+    const trBatch = document.createElement("tr");
+    const tdB1 = document.createElement("td"); tdB1.textContent = " "; tdB1.className="rowLabel sticky-left";
+    const tdB2 = document.createElement("td"); tdB2.className="rowLabel sticky-left-2";
+
+    // 일괄입력 영역
+    const wrapB2 = document.createElement("div");
+    wrapB2.style.cssText = "display:flex; flex-direction:column; gap:4px; align-items:center;";
+    const spanB2 = document.createElement("span"); spanB2.textContent = "일괄입력"; spanB2.style.fontSize = "12px";
+    const selB2 = document.createElement("select");
+    selB2.id = "globalBatchSelect";
+    selB2.style.cssText = "width:90%; font-size:11px; padding:2px;";
+    
+    // 선택지 구성
+    [{v:"/",t:"출석(/)"}, {v:"X",t:"결석(X)"}, {v:"O/",t:"지각(O/)"}, {v:"/O",t:"조퇴(/O)"}, {v:"/X",t:"훈련없음(/X)"}, {v:"=",t:"지원고용훈련(=)"}, {v:"",t:"빈칸"}]
+      .forEach(o => {
+        const opt = document.createElement("option"); opt.value = o.v; opt.textContent = o.t;
+        selB2.appendChild(opt);
+      });
+    
+    selB2.value = currentGlobalBatchStatus;
+    selB2.addEventListener("change", (e) => { currentGlobalBatchStatus = e.target.value; });
+    wrapB2.appendChild(spanB2); wrapB2.appendChild(selB2); tdB2.appendChild(wrapB2);
+
+    trBatch.appendChild(tdB1); trBatch.appendChild(tdB2);
+
+    // 날짜별 일괄입력 체크박스
+    for (let d = 1; d <= dmax; d++) {
+      const td = document.createElement("td");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.title = "체크 시 좌측 선택된 현황으로 해당 일자 훈련생 전체 일괄 변경";
+
+      const bState = batchState[d] || { checked: false, status: "" };
+      cb.checked = bState.checked;
+
+      cb.addEventListener("change", () => {
+        if (cb.checked) {
+          batchState[d] = { checked: true, status: currentGlobalBatchStatus };
+          for (const t of trainees) t.daily[d] = currentGlobalBatchStatus;
+        } else {
+          batchState[d] = { checked: false, status: "" };
+          for (const t of trainees) t.daily[d] = "";
+        }
+        recalcAndRefresh();
+      });
+
+      td.appendChild(cb);
+      if (bState.checked && bState.status) {
+        const st = document.createElement("div");
+        st.style.fontSize = "10px"; st.style.color = "var(--muted)"; st.style.fontWeight = "bold";
+        st.textContent = bState.status;
+        td.appendChild(st);
+      }
+      trBatch.appendChild(td);
+    }
+    for (let i=0;i<rightHeaders.length;i++){
+      const td = document.createElement("td"); td.className="rightCols"; trBatch.appendChild(td);
+    }
+    thead.appendChild(trBatch);
+
+    // ---- row: 일차(훈련일) 누적 ----
+    // 모두가 훈련없음(/X)인 날짜만 제외, 나머지는 일차 1 누적
+    const trDayIndex = document.createElement("tr");
+    const tdL1 = document.createElement("td"); tdL1.textContent = " "; tdL1.className="rowLabel sticky-left";
+    const tdL2 = document.createElement("td"); tdL2.textContent = "일차"; tdL2.className="rowLabel sticky-left-2";
+    trDayIndex.appendChild(tdL1); trDayIndex.appendChild(tdL2);
+
+    let dayIdx = 0;
+    let trainingDayCount = 0;
+    for (let d = 1; d <= dmax; d++) {
+      const td = document.createElement("td");
+      let allNoTrain = true;
+      if (trainees.length > 0) {
+        for(const t of trainees){
+          if(t.daily[d] !== "/X") { allNoTrain = false; break; }
+        }
+      } else {
+        allNoTrain = (batchState[d].checked && batchState[d].status === "/X");
+      }
+
+      if (!allNoTrain) {
+        dayIdx++;
+        trainingDayCount++;
+        td.textContent = dayIdx;
+      } else {
+        td.textContent = "";
+      }
+      trDayIndex.appendChild(td);
+    }
+    for (let i=0;i<rightHeaders.length;i++){
+      const td = document.createElement("td"); td.className="rightCols"; trDayIndex.appendChild(td);
+    }
+    
+    // ---- row: 훈련(재적)인원 ----
+    const trActive = document.createElement("tr");
+    const tdA1 = document.createElement("td"); tdA1.textContent = " "; tdA1.className="rowLabel sticky-left";
+    const tdA2 = document.createElement("td"); tdA2.textContent = "훈련(재적)인원"; tdA2.className="rowLabel sticky-left-2";
+    trActive.appendChild(tdA1); trActive.appendChild(tdA2);
+
+    const activeCounts = [];
+    for (let d=1; d<=dmax; d++){
+      let cnt = 0;
+      for (const t of trainees) {
+        const v = (t.daily[d] ?? "").trim();
+        if (v !== "" && v !== "X" && v !== "/X") cnt++;
+      }
+      activeCounts[d] = cnt;
+      const td = document.createElement("td");
+      td.textContent = cnt ? String(cnt) : "";
+      trActive.appendChild(td);
+    }
+    for (let i=0;i<rightHeaders.length;i++){
+      const td = document.createElement("td"); td.className="rightCols"; trActive.appendChild(td);
+    }
+
+    attTable.appendChild(thead);
+
+    // ---- 바디: 훈련생 행 ----
+    const tbody = document.createElement("tbody");
+
+    trainees.forEach((t, idx) => {
+      const tr = document.createElement("tr");
+
+      // 번호 & 성명
+      const tdNo = document.createElement("td"); tdNo.className = "sticky-left"; tdNo.textContent = String(idx + 1); tr.appendChild(tdNo);
+      const tdName = document.createElement("td"); tdName.className = "sticky-left-2";
+      const wrap = document.createElement("div"); wrap.className = "nameCell";
+      const nameInput = document.createElement("input");
+      nameInput.type = "text"; nameInput.value = t.name; nameInput.placeholder = "성명"; nameInput.className = "nameInput";
+      nameInput.addEventListener("input", () => { t.name = nameInput.value; });
+      const delBtn = document.createElement("button"); delBtn.type = "button"; delBtn.textContent = "삭제"; delBtn.className = "miniBtn delBtn";
+      delBtn.addEventListener("click", () => deleteTraineeAt(idx));
+      wrap.appendChild(nameInput); wrap.appendChild(delBtn); tdName.appendChild(wrap); tr.appendChild(tdName);
+
+      // 일자 상태 드롭다운
+      for (let d = 1; d <= dmax; d++) {
+        const td = document.createElement("td");
+        const sel = document.createElement("select");
+        sel.className = "statusSelect";
+
+        for (const s of STATUS) {
+          const opt = document.createElement("option"); opt.value = s.v; opt.textContent = s.t;
+          sel.appendChild(opt);
+        }
+
+        sel.value = t.daily[d] ?? "";
+        sel.addEventListener("change", () => {
+          t.daily[d] = sel.value;
+
+          // 훈련생 상태가 개별 수정될 경우, 해당일 전체 인원 상태를 비교하여 일괄입력 체크 상태 동기화
+          let allSame = true;
+          let firstVal = trainees[0].daily[d];
+          for(let i=1; i<trainees.length; i++){
+            if(trainees[i].daily[d] !== firstVal) { allSame = false; break; }
+          }
+          if(allSame && firstVal !== "") batchState[d] = { checked: true, status: firstVal };
+          else batchState[d] = { checked: false, status: "" };
+
+          recalcAndRefresh();
+        });
+
+        td.appendChild(sel);
+        tr.appendChild(td);
+      }
+
+      // 소정출석일수(AH)
+      const tdPlanned = document.createElement("td"); tdPlanned.className = "rightCols";
+      const plannedInput = document.createElement("input");
+      plannedInput.type = "number"; plannedInput.min = "0"; plannedInput.step = "1"; plannedInput.className = "numInput";
+      plannedInput.value = t.planned;
+      plannedInput.addEventListener("input", () => { t.planned = Number(plannedInput.value || 0); recalcAndRefresh(); });
+      tdPlanned.appendChild(plannedInput); tr.appendChild(tdPlanned);
+
+      // 계산열들
+      const calc = computeRowStats(t, dmax);
+      tr.appendChild(makeTd(calc.actual)); tr.appendChild(makeTd(calc.equiv)); tr.appendChild(makeTd(calc.absent));
+      tr.appendChild(makeTd(calc.lateEarly)); tr.appendChild(makeTd(calc.convAbsent)); tr.appendChild(makeTd(calc.supported));
+      tr.appendChild(makeTd(calc.rateText));
+
+      tbody.appendChild(tr);
+    });
+
+    // ---- 합계/평균 행 ----
+    const totals = computeTotals(dmax, activeCounts);
+    const trSum = document.createElement("tr");
+    const tdS1 = document.createElement("td"); tdS1.textContent=""; tdS1.className="rowLabel sticky-left";
+    const tdS2 = document.createElement("td"); tdS2.textContent="계"; tdS2.className="rowLabel sticky-left-2";
+    trSum.appendChild(tdS1); trSum.appendChild(tdS2);
+    for (let d=1; d<=dmax; d++){ const td = document.createElement("td"); trSum.appendChild(td); }
+    trSum.appendChild(makeTd(totals.plannedSum, true)); trSum.appendChild(makeTd(totals.actualSum, true));
+    trSum.appendChild(makeTd(totals.equivSum, true)); trSum.appendChild(makeTd(totals.absentSum, true));
+    trSum.appendChild(makeTd(totals.lateEarlySum, true)); trSum.appendChild(makeTd(totals.convAbsentSum, true));
+    trSum.appendChild(makeTd(totals.supportedSum, true)); trSum.appendChild(makeTd(totals.rateAvgText, true));
+    
+    tbody.appendChild(trSum);
+    tbody.appendChild(trDayIndex);
+    tbody.appendChild(trActive);
+    attTable.appendChild(tbody);
+
+    monthlyDaysHint.textContent = `(훈련일 기준 자동: ${trainingDayCount}일)`;
+    renderMeta();
+    renderFoot(totals, trainingDayCount);
+  }
+
+  function makeTd(val, isBold=false){
+    const td = document.createElement("td"); td.className = "rightCols";
+    td.textContent = (val === null || val === undefined) ? "" : String(val);
+    if (isBold) td.style.fontWeight = "700";
+    return td;
+  }
+
+  // ===== 계산 로직 =====
+  function computeRowStats(t, dmax){
+    let actual = 0, absent = 0, lateEarly = 0, supported = 0;
+    for (let d=1; d<=dmax; d++){
+      const v = (t.daily[d] ?? "").trim();
+      if (v === "/") actual++;
+      if (v === "O/") actual++;
+      if (v === "X") absent++;
+      if (v === "O/" || v === "/O") lateEarly++;
+      if (v === "=") supported++;
+    }
+    const convAbsent = Math.floor(lateEarly / 3);
+    const equiv = actual - convAbsent;
+    const planned = Number(t.planned || 0);
+    const rate = planned > 0 ? (equiv / planned) : 0;
+    return { planned, actual, equiv, absent, lateEarly, convAbsent, supported, rate, rateText: `${Math.round(rate * 100)}%` };
+  }
+
+  function computeTotals(dmax, activeCounts){
+    let plannedSum=0, actualSum=0, equivSum=0, absentSum=0, lateEarlySum=0, convAbsentSum=0, supportedSum=0, rateSum=0, rateCnt=0;
+    for (const t of trainees){
+      const s = computeRowStats(t, dmax);
+      plannedSum += s.planned; actualSum += s.actual; equivSum += s.equiv; absentSum += s.absent;
+      lateEarlySum += s.lateEarly; convAbsentSum += s.convAbsent; supportedSum += s.supported;
+      rateSum += s.rate; rateCnt++;
+    }
+    let activeSum = 0;
+    for (let d=1; d<=dmax; d++) activeSum += (activeCounts[d] || 0);
+    const rateAvg = rateCnt ? (rateSum / rateCnt) : 0;
+    return { plannedSum, actualSum, equivSum, absentSum, lateEarlySum, convAbsentSum, supportedSum, rateAvgText: `${Math.round(rateAvg * 100)}%`, activeSum };
+  }
+
+  function renderMeta(){
+    const y = yearSel.value; const m = monthSel.value;
+    metaLeft.textContent = `기관명: ${orgName.value || "-"} / 훈련구분: ${trainType.value || "-"} / 출석년월: ${y}년 ${m}월`;
+    metaRight.textContent = `담당자: ${manager.value || "-"} / 비고: ${remark.value || "-"}`;
+  }
+
+  function renderFoot(totals, trainingDayCount){
+    const monthly = Number(monthlyDays.value || 0);
+    const denom = monthly > 0 ? monthly : trainingDayCount;
+    const avgTrainee = denom > 0 ? (totals.activeSum / denom) : 0;
+    footLeft.textContent = `훈련생 소정출석일수 계: ${totals.plannedSum} / 실제출근일 계: ${totals.actualSum} / 환산출근일 계: ${totals.equivSum} / 결근일 계: ${totals.absentSum}`;
+    footRight.textContent = `훈련(재적)인원계: ${totals.activeSum} / 평균훈련생: ${avgTrainee.toFixed(2)} (훈련(재적)인원계 ÷ 기관 월간훈련일수)`;
+  }
+
+  function recalcAndRefresh(){ renderTable(); }
+
+  // ===== 훈련생 행 추가 =====
+  function addTrainee(name=""){
+    const daily = {};
+    const dmax = daysInMonth(currentY, currentM);
+    // 일괄체크 된 항목이 있다면 새 훈련생에게도 반영
+    for(let d=1; d<=dmax; d++) {
+      if (batchState[d] && batchState[d].checked) daily[d] = batchState[d].status;
+    }
+    trainees.push({ name, planned: 0, daily });
+    renderTable();
+  }
+
+  function deleteTraineeAt(index){
+    const t = trainees[index];
+    const label = (t?.name || `#${index + 1}`);
+    if (!confirm(`${label} 훈련생을 삭제할까요?`)) return;
+    trainees.splice(index, 1);
+    if (trainees.length === 0) trainees.push({ name: "", planned: 0, daily: {} });
+    renderTable();
+  }
+
+  // ===== PDF 다운로드 =====
+  function downloadPDF(){
+    renderMeta();
+    const y = yearSel.value; const m = pad2(monthSel.value);
+    const fileBase = `${orgName.value || "출석부"}_${y}-${m}`;
+
+    const stickyEls = document.querySelectorAll(".sticky-left, .sticky-left-2");
+    stickyEls.forEach(el => { el.dataset._pos = el.style.position; el.style.position = "static"; });
+
+    const element = document.getElementById("printArea");
+    const opt = {
+      margin: [6, 6, 6, 6],
+      filename: `${fileBase}.pdf`,
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" }
+    };
+
+    html2pdf().set(opt).from(element).save().finally(() => {
+      stickyEls.forEach(el => { el.style.position = el.dataset._pos || ""; });
+    });
+  }
+
+  // ===== Excel(.xlsx) 다운로드 =====
+  function downloadXLSX(){
+    if (typeof XLSX === "undefined") {
+      alert("xlsx 라이브러리를 불러오지 못했습니다. CDN 스크립트를 확인해주세요.");
+      return;
+    }
+
+    renderMeta();
+
+    const y = Number(yearSel.value);
+    const m = Number(monthSel.value);
+    const dmax = daysInMonth(y, m);
+
+    const fileBase = `${orgName.value || "출석부"}_${y}-${pad2(m)}`;
+
+    // 우측 계산열 헤더(표와 동일)
+    const rightHeaders = [
+      "훈련생 소정출석일수", "실제출근일", "환산출근일", "결근일",
+      "지각조퇴횟수", "결석환산일", "지원고용훈련일수", "출석률"
+    ];
+
+    // ---- 엑셀에 넣을 2차원 배열(AOA) 구성 ----
+    const aoa = [];
+
+    // 제목/메타
+    aoa.push(["출석부"]);
+    aoa.push([`기관명: ${orgName.value || "-"}`, `훈련구분: ${trainType.value || "-"}`, `출석년월: ${y}년 ${m}월`]);
+    aoa.push([`담당자: ${manager.value || "-"}`, `비고: ${remark.value || "-"}`]);
+    aoa.push([]);
+
+    // 헤더 행
+    const header = ["번호", "성명"];
+    for (let d = 1; d <= dmax; d++){
+      const wd = weekdayKo(new Date(y, m - 1, d));
+      header.push(`${d}(${wd})`);
+    }
+    header.push(...rightHeaders);
+    aoa.push(header);
+
+    // 훈련생 데이터 행
+    trainees.forEach((t, idx) => {
+      const row = [idx + 1, t.name || ""];
+      for (let d = 1; d <= dmax; d++){
+        row.push(((t.daily[d] ?? "") + "").trim());
+      }
+
+      const s = computeRowStats(t, dmax);
+      row.push(s.planned, s.actual, s.equiv, s.absent, s.lateEarly, s.convAbsent, s.supported, s.rateText);
+      aoa.push(row);
+    });
+
+    // activeCounts / totals 계산(표 로직과 동일)
+    const activeCounts = [];
+    for (let d=1; d<=dmax; d++){
+      let cnt = 0;
+      for (const t of trainees) {
+        const v = (t.daily[d] ?? "").trim();
+        if (v !== "" && v !== "X" && v !== "/X") cnt++;
+      }
+      activeCounts[d] = cnt;
+    }
+    const totals = computeTotals(dmax, activeCounts);
+
+    // 합계 행
+    const totalRow = ["", "계"];
+    for (let d=1; d<=dmax; d++) totalRow.push("");
+    totalRow.push(
+      totals.plannedSum, totals.actualSum, totals.equivSum, totals.absentSum,
+      totals.lateEarlySum, totals.convAbsentSum, totals.supportedSum, totals.rateAvgText
+    );
+    aoa.push(totalRow);
+
+    // (옵션) 일차 행
+    let dayIdx = 0;
+    const dayRow = ["", "일차"];
+    for (let d=1; d<=dmax; d++){
+      let allNoTrain = true;
+      for (const t of trainees){
+        if ((t.daily[d] ?? "").trim() !== "/X") { allNoTrain = false; break; }
+      }
+      if (!allNoTrain) { dayIdx++; dayRow.push(dayIdx); }
+      else dayRow.push("");
+    }
+    for (let i=0; i<rightHeaders.length; i++) dayRow.push("");
+    aoa.push(dayRow);
+
+    // (옵션) 훈련(재적)인원 행
+    const activeRow = ["", "훈련(재적)인원"];
+    for (let d=1; d<=dmax; d++) activeRow.push(activeCounts[d] || "");
+    for (let i=0; i<rightHeaders.length; i++) activeRow.push("");
+    aoa.push(activeRow);
+
+    // 하단 안내
+    aoa.push([]);
+    aoa.push([footLeft.textContent || ""]);
+    aoa.push([footRight.textContent || ""]);
+
+    // ---- 시트/워크북 생성 ----
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // 컬럼 폭(가독성)
+    const wscols = [];
+    wscols.push({ wch: 6 });   // 번호
+    wscols.push({ wch: 14 });  // 성명
+    for (let d=1; d<=dmax; d++) wscols.push({ wch: 7 }); // 일자
+    wscols.push(
+      { wch: 18 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 8 }
+    );
+    ws["!cols"] = wscols;
+
+    // 제목(첫 줄) 병합
+    const totalCols = 2 + dmax + rightHeaders.length;
+    ws["!merges"] = ws["!merges"] || [];
+    ws["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `${y}-${pad2(m)}`);
+
+    XLSX.writeFile(wb, `${fileBase}.xlsx`);
+  }
+
+
+  // ===== 샘플데이터 =====
+  function fillDemo(){
+    orgName.value = "OO직업훈련기관"; trainType.value = "집합훈련";
+    manager.value = "홍길동"; remark.value = "샘플";
+    trainStart.value = "09:00"; trainEnd.value = "18:00";
+    mealStart.value = "12:00"; mealEnd.value = "13:00";
+
+    yearSel.value = "2026"; monthSel.value = "2";
+    currentY = 2026; currentM = 2;
+
+    batchState = {};
+    const y = 2026, m = 2, dmax = daysInMonth(y,m);
+    for (let d=1; d<=dmax; d++){
+      const wd = new Date(y, m-1, d).getDay();
+      batchState[d] = (wd === 0 || wd === 6) ? { checked: true, status: "/X" } : { checked: false, status: "" };
+    }
+
+    trainees = [
+      { name: "김철수", planned: 18, daily: {} },
+      { name: "이영희", planned: 18, daily: {} },
+      { name: "박민수", planned: 18, daily: {} },
+    ];
+    
+    // 주말 등 일괄 설정 배포
+    for(let d=1; d<=dmax; d++){
+      if(batchState[d].checked) {
+        trainees[0].daily[d] = batchState[d].status;
+        trainees[1].daily[d] = batchState[d].status;
+        trainees[2].daily[d] = batchState[d].status;
+      }
+    }
+
+    trainees[0].daily[3] = "O/"; trainees[0].daily[5] = "/O"; trainees[0].daily[7] = "O/";
+    trainees[0].daily[10] = "X"; trainees[0].daily[12] = "/"; trainees[0].daily[13] = "/"; trainees[0].daily[14] = "=";
+    trainees[1].daily[4] = "X"; trainees[1].daily[11] = "X"; trainees[1].daily[12] = "/"; trainees[1].daily[13] = "O/";
+    trainees[2].daily[6] = "/O"; trainees[2].daily[9] = "O/"; trainees[2].daily[12] = "/O";
+
+    // 데이터 불일치 재조정
+    for(let d=1; d<=dmax; d++){
+      let allSame = true, firstVal = trainees[0].daily[d];
+      for(let i=1; i<trainees.length; i++){
+        if(trainees[i].daily[d] !== firstVal) { allSame = false; break; }
+      }
+      if(allSame && firstVal !== "" && firstVal !== undefined) batchState[d] = { checked: true, status: firstVal };
+      else batchState[d] = { checked: false, status: "" };
+    }
+
+    monthlyDays.value = "";
+    updateTimeCalcs(); renderTable();
+  }
+
+  // ===== 이벤트 바인딩 =====
+  addRowBtn.addEventListener("click", () => addTrainee(""));
+  fillDemoBtn.addEventListener("click", fillDemo);
+  downloadPdfBtn.addEventListener("click", downloadPDF);
+    downloadXlsxBtn.addEventListener("click", downloadXLSX);
+
+
+  [orgName, trainType, monthlyDays, manager, remark, yearSel, monthSel, trainStart, trainEnd, mealStart, mealEnd]
+    .forEach(el => el.addEventListener("input", () => { updateTimeCalcs(); recalcAndRefresh(); }));
+  [yearSel, monthSel].forEach(el => el.addEventListener("change", handleYearMonthChange));
+
+  // ===== 초기화 =====
+  buildYearMonthSelect();
+  addTrainee("박성욱"); 
+  updateTimeCalcs();
+  currentKey = ymKey(Number(yearSel.value), Number(monthSel.value));
+  initMonthState(Number(yearSel.value), Number(monthSel.value));
+  renderTable();
+
+  // ===== JSON 기능 =====
+  function getStateForJson() {
+    return {
+      _version: 1,
+      header: {
+        orgName: orgName.value || "", trainType: trainType.value || "", monthlyDays: Number(monthlyDays.value || 0),
+        year: Number(yearSel.value), month: Number(monthSel.value), trainStart: trainStart.value || "",
+        trainEnd: trainEnd.value || "", mealStart: mealStart.value || "", mealEnd: mealEnd.value || "",
+        manager: manager.value || "", remark: remark.value || ""
+      },
+      batchState: { ...batchState },
+      trainees: trainees.map(t => ({
+        name: t.name || "", planned: Number(t.planned || 0), daily: { ...t.daily }
+      }))
+    };
+  }
+
+  function applyStateFromJson(state) {
+    if (!state || typeof state !== "object") throw new Error("JSON 형식이 올바르지 않습니다.");
+    const h = state.header || {};
+    if (!h.year || !h.month) throw new Error("header.year / header.month 정보가 없습니다.");
+
+    orgName.value = h.orgName ?? ""; trainType.value = h.trainType ?? "";
+    monthlyDays.value = (h.monthlyDays ?? "") === "" ? "" : String(h.monthlyDays ?? 0);
+    yearSel.value = String(h.year); monthSel.value = String(h.month);
+    trainStart.value = h.trainStart ?? ""; trainEnd.value = h.trainEnd ?? "";
+    mealStart.value = h.mealStart ?? ""; mealEnd.value = h.mealEnd ?? "";
+    manager.value = h.manager ?? ""; remark.value = h.remark ?? "";
+
+    batchState = {};
+    if (state.batchState && typeof state.batchState === "object") {
+      for (const [k, v] of Object.entries(state.batchState)) batchState[Number(k)] = { checked: !!v.checked, status: v.status || "" };
+    } else if (state.noTraining && typeof state.noTraining === "object") { // 구버전 호환
+      for (const [k, v] of Object.entries(state.noTraining)) batchState[Number(k)] = { checked: !!v, status: !!v ? "/X" : "" };
+    }
+
+    trainees = Array.isArray(state.trainees) ? state.trainees.map(t => ({
+      name: t.name ?? "", planned: Number(t.planned || 0),
+      daily: (() => {
+        const obj = {};
+        if (t.daily && typeof t.daily === "object") {
+          for (const [k, v] of Object.entries(t.daily)) obj[Number(k)] = (v ?? "");
+        }
+        return obj;
+      })()
+    })) : [];
+
+    updateTimeCalcs(); renderTable();
+  }
+
+  exportJsonBtn.addEventListener("click", () => {
+    const data = getStateForJson();
+    const y = data.header.year; const m = String(data.header.month).padStart(2, "0");
+    const base = (data.header.orgName || "출석부") + `_${y}-${m}`;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `${base}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  importJsonBtn.addEventListener("click", () => { importJsonFile.value = ""; importJsonFile.click(); });
+  importJsonFile.addEventListener("change", () => {
+    const file = importJsonFile.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const state = JSON.parse(String(reader.result || ""));
+        applyStateFromJson(state);
+        alert("불러오기 완료!");
+      } catch (e) { alert("불러오기 실패: " + (e?.message || e)); }
+    };
+    reader.readAsText(file, "utf-8");
+  });
+
+})();
+</script>
+</body>
+</html>
