@@ -680,6 +680,13 @@
 
   function recalcAndRefresh(){ renderTable(); }
 
+  function syncPlannedDaysWithMonthly(){
+    const hasValue = monthlyDays.value !== "";
+    if (!hasValue) return;
+    const monthly = Number(monthlyDays.value || 0);
+    trainees.forEach(t => { t.planned = monthly; });
+  }
+
   // ===== 훈련생 행 추가 =====
   function addTrainee(name=""){
     const daily = {};
@@ -688,7 +695,8 @@
     for(let d=1; d<=dmax; d++) {
       if (batchState[d] && batchState[d].checked) daily[d] = batchState[d].status;
     }
-    trainees.push({ name, planned: 0, daily });
+    const planned = monthlyDays.value === "" ? 0 : Number(monthlyDays.value || 0);
+    trainees.push({ name, planned, daily });
     renderTable();
   }
 
@@ -905,7 +913,13 @@
     downloadXlsxBtn.addEventListener("click", downloadXLSX);
 
 
-  [orgName, trainType, monthlyDays, manager, remark, yearSel, monthSel, trainStart, trainEnd, mealStart, mealEnd]
+  monthlyDays.addEventListener("input", () => {
+    syncPlannedDaysWithMonthly();
+    updateTimeCalcs();
+    recalcAndRefresh();
+  });
+
+  [orgName, trainType, manager, remark, yearSel, monthSel, trainStart, trainEnd, mealStart, mealEnd]
     .forEach(el => el.addEventListener("input", () => { updateTimeCalcs(); recalcAndRefresh(); }));
   [yearSel, monthSel].forEach(el => el.addEventListener("change", handleYearMonthChange));
 
