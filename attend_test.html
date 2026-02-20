@@ -115,33 +115,6 @@
       .nameCell { flex-direction: column; align-items: stretch; }
       .miniBtn { width: 100%; }
     }
-    /* PDF 내보내기용 압축 스타일 */
-    .pdf-export-clone {
-      position: fixed;
-      left: -99999px;
-      top: 0;
-      width: 1800px;
-      background: #fff;
-      z-index: -1;
-    }
-    .pdf-export-clone .tableWrap { overflow: visible; }
-    .pdf-export-clone .sticky-left,
-    .pdf-export-clone .sticky-left-2 {
-      position: static !important;
-      left: auto !important;
-      min-width: auto !important;
-      width: auto !important;
-    }
-    .pdf-export-clone th,
-    .pdf-export-clone td {
-      font-size: 9px;
-      padding: 2px 3px;
-      white-space: nowrap;
-    }
-    .pdf-export-clone .rightCols { background: #fff; }
-    .pdf-export-clone .pdf-cell-text { display: inline-block; min-width: 10px; }
-    .pdf-export-clone .note { display: none; }
-
   </style>
 </head>
 
@@ -722,15 +695,6 @@
     trainees.forEach(t => { t.planned = monthly; });
   }
 
-  function syncPlannedDaysWithMonthly(){
-    const hasValue = monthlyDays.value !== "";
-    if (!hasValue) return;
-    const monthly = Number(monthlyDays.value || 0);
-    trainees.forEach(t => {
-      if (t.planned === "" || t.planned === null || t.planned === undefined) t.planned = monthly;
-    });
-  }
-
   // ===== 훈련생 행 추가 =====
   function addTrainee(name=""){
     const daily = {};
@@ -753,53 +717,25 @@
   }
 
   // ===== PDF 다운로드 =====
-  function buildPdfExportClone(){
-    const clone = document.getElementById("printArea").cloneNode(true);
-    clone.classList.add("pdf-export-clone");
-
-    clone.querySelectorAll("button").forEach(btn => btn.remove());
-
-    // PDF에는 입력용/일괄적용 UI 행을 제외하고 결과 표만 표시
-    clone.querySelectorAll("#attTable thead tr").forEach(tr => {
-      const labelCell = tr.children[1];
-      const label = (labelCell?.textContent || "").trim();
-      if (label === "출석현황" || label === "일괄입력") tr.remove();
-    });
-
-    clone.querySelectorAll("input, select, textarea").forEach(el => {
-      if (el.type === "checkbox") {
-        el.remove();
-        return;
-      }
-      const span = document.createElement("span");
-      span.className = "pdf-cell-text";
-      const text = el.tagName === "SELECT"
-        ? (el.options[el.selectedIndex]?.textContent ?? "")
-        : (el.value ?? "");
-      span.textContent = text.toString().trim();
-      el.replaceWith(span);
-    });
-
-    document.body.appendChild(clone);
-    return clone;
-  }
-
   function downloadPDF(){
     renderMeta();
     const y = yearSel.value; const m = pad2(monthSel.value);
     const fileBase = `${orgName.value || "출석부"}_${y}-${m}`;
 
-    const exportNode = buildPdfExportClone();
+    const stickyEls = document.querySelectorAll(".sticky-left, .sticky-left-2");
+    stickyEls.forEach(el => { el.dataset._pos = el.style.position; el.style.position = "static"; });
+
+    const element = document.getElementById("printArea");
     const opt = {
-      margin: [4, 4, 4, 4],
+      margin: [6, 6, 6, 6],
       filename: `${fileBase}.pdf`,
       image: { type: "jpeg", quality: 0.95 },
       html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
-      jsPDF: { unit: "mm", format: "a3", orientation: "landscape" }
+      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" }
     };
 
-    html2pdf().set(opt).from(exportNode).save().finally(() => {
-      exportNode.remove();
+    html2pdf().set(opt).from(element).save().finally(() => {
+      stickyEls.forEach(el => { el.style.position = el.dataset._pos || ""; });
     });
   }
 
