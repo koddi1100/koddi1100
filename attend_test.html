@@ -321,14 +321,14 @@
         for(let d=1; d<=dmax; d++) {
           if (batchState[d].checked) daily[d] = batchState[d].status;
         }
-        return { name: t.name || "", planned: 0, daily };
+        return { name: t.name || "", planned: "", daily };
       });
     } else {
       const daily = {};
       for(let d=1; d<=dmax; d++) {
         if (batchState[d].checked) daily[d] = batchState[d].status;
       }
-      trainees = [{ name: "", planned: 0, daily }];
+      trainees = [{ name: "", planned: "", daily }];
     }
   }
 
@@ -411,7 +411,7 @@
     const rightHeaders = [
       { key:"planned", label:"훈련생 소정출석일수" }, { key:"actual", label:"실제출근일" },
       { key:"equiv", label:"환산출근일" }, { key:"absent", label:"결근일" },
-      { key:"lateEarly", label:"지각/조퇴횟수" }, { key:"convAbsent", label:"결석환산일" },
+      { key:"lateEarly", label:"지각/조퇴(결석환산일)" },
       { key:"supported", label:"지원고용훈련일수" }, { key:"rate", label:"출석률" },
     ];
     for (const rh of rightHeaders) {
@@ -591,13 +591,13 @@
       const plannedInput = document.createElement("input");
       plannedInput.type = "number"; plannedInput.min = "0"; plannedInput.step = "1"; plannedInput.className = "numInput";
       plannedInput.value = t.planned;
-      plannedInput.addEventListener("input", () => { t.planned = Number(plannedInput.value || 0); recalcAndRefresh(); });
+      plannedInput.addEventListener("input", () => { t.planned = plannedInput.value === "" ? "" : Number(plannedInput.value || 0); recalcAndRefresh(); });
       tdPlanned.appendChild(plannedInput); tr.appendChild(tdPlanned);
 
       // 계산열들
       const calc = computeRowStats(t, dmax);
       tr.appendChild(makeTd(calc.actual)); tr.appendChild(makeTd(calc.equiv)); tr.appendChild(makeTd(calc.absent));
-      tr.appendChild(makeTd(calc.lateEarlyText)); tr.appendChild(makeTd(calc.convAbsent)); tr.appendChild(makeTd(calc.supported));
+      tr.appendChild(makeTd(calc.lateEarlyDisplay, false, true)); tr.appendChild(makeTd(calc.supported));
       tr.appendChild(makeTd(calc.rateText));
 
       tbody.appendChild(tr);
@@ -612,7 +612,7 @@
     for (let d=1; d<=dmax; d++){ const td = document.createElement("td"); trSum.appendChild(td); }
     trSum.appendChild(makeTd(totals.plannedSum, true)); trSum.appendChild(makeTd(totals.actualSum, true));
     trSum.appendChild(makeTd(totals.equivSum, true)); trSum.appendChild(makeTd(totals.absentSum, true));
-    trSum.appendChild(makeTd(totals.lateEarlyText, true)); trSum.appendChild(makeTd(totals.convAbsentSum, true));
+    trSum.appendChild(makeTd(totals.lateEarlyDisplay, true, true));
     trSum.appendChild(makeTd(totals.supportedSum, true)); trSum.appendChild(makeTd(totals.rateAvgText, true));
     
     tbody.appendChild(trSum);
@@ -625,9 +625,10 @@
     renderFoot(totals, trainingDayCount);
   }
 
-  function makeTd(val, isBold=false){
+  function makeTd(val, isBold=false, useHtml=false){
     const td = document.createElement("td"); td.className = "rightCols";
-    td.textContent = (val === null || val === undefined) ? "" : String(val);
+    if (useHtml) td.innerHTML = (val === null || val === undefined) ? "" : String(val);
+    else td.textContent = (val === null || val === undefined) ? "" : String(val);
     if (isBold) td.style.fontWeight = "700";
     return td;
   }
@@ -636,20 +637,24 @@
   function computeRowStats(t, dmax){
     let actual = 0, absent = 0, late = 0, early = 0, supported = 0;
     for (let d=1; d<=dmax; d++){
-      const v = (t.daily[d] ?? "").trim();
+      const v = (t.daily[d] ?? "").trim().toUpperCase();
       if (v === "/") actual++;
       if (v === "O/") { actual++; late++; }
-      if (v === "/O") early++;
+      if (v === "/O") { actual++; early++; }
       if (v === "X") absent++;
       if (v === "=") supported++;
     }
     const lateEarly = late + early;
     const convAbsent = Math.floor(lateEarly / 3);
     const equiv = actual - convAbsent;
-    const planned = Number(t.planned || 0);
-    const rate = planned > 0 ? (equiv / planned) : 0;
-    const lateEarlyText = `${late}/${early}`;
-    return { planned, actual, equiv, absent, late, early, lateEarly, lateEarlyText, convAbsent, supported, rate, rateText: `${Math.round(rate * 100)}%` };
+    const plannedRaw = t.planned;
+    let planned = Number(plannedRaw);
+    if (plannedRaw === "" || plannedRaw === null || plannedRaw === undefined || Number.isNaN(planned) || planned === 0) {
+      planned = dmax;
+    }
+    const rate = planned > 0 ? Math.floor((equiv * 100) / planned) : 0;
+    const lateEarlyDisplay = `${late} / ${early}<br/>(${convAbsent})`;
+    return { planned, actual, equiv, absent, late, early, convAbsent, lateEarlyDisplay, supported, rate, rateText: `${rate}%` };
   }
 
   function computeTotals(dmax, activeCounts){
@@ -662,9 +667,9 @@
     }
     let activeSum = 0;
     for (let d=1; d<=dmax; d++) activeSum += (activeCounts[d] || 0);
-    const rateAvg = rateCnt ? (rateSum / rateCnt) : 0;
-    const lateEarlyText = `${lateSum}/${earlySum}`;
-    return { plannedSum, actualSum, equivSum, absentSum, lateSum, earlySum, lateEarlyText, convAbsentSum, supportedSum, rateAvgText: `${Math.round(rateAvg * 100)}%`, activeSum };
+    const rateAvg = rateCnt ? Math.floor(rateSum / rateCnt) : 0;
+    const lateEarlyDisplay = `${lateSum} / ${earlySum}<br/>(${convAbsentSum})`;
+    return { plannedSum, actualSum, equivSum, absentSum, lateSum, earlySum, convAbsentSum, lateEarlyDisplay, supportedSum, rateAvgText: `${rateAvg}%`, activeSum };
   }
 
   function renderMeta(){
@@ -690,6 +695,15 @@
     trainees.forEach(t => { t.planned = monthly; });
   }
 
+  function syncPlannedDaysWithMonthly(){
+    const hasValue = monthlyDays.value !== "";
+    if (!hasValue) return;
+    const monthly = Number(monthlyDays.value || 0);
+    trainees.forEach(t => {
+      if (t.planned === "" || t.planned === null || t.planned === undefined) t.planned = monthly;
+    });
+  }
+
   // ===== 훈련생 행 추가 =====
   function addTrainee(name=""){
     const daily = {};
@@ -698,8 +712,7 @@
     for(let d=1; d<=dmax; d++) {
       if (batchState[d] && batchState[d].checked) daily[d] = batchState[d].status;
     }
-    const planned = monthlyDays.value === "" ? 0 : Number(monthlyDays.value || 0);
-    trainees.push({ name, planned, daily });
+    trainees.push({ name, planned: "", daily });
     renderTable();
   }
 
@@ -708,7 +721,7 @@
     const label = (t?.name || `#${index + 1}`);
     if (!confirm(`${label} 훈련생을 삭제할까요?`)) return;
     trainees.splice(index, 1);
-    if (trainees.length === 0) trainees.push({ name: "", planned: 0, daily: {} });
+    if (trainees.length === 0) trainees.push({ name: "", planned: "", daily: {} });
     renderTable();
   }
 
@@ -753,7 +766,7 @@
     // 우측 계산열 헤더(표와 동일)
     const rightHeaders = [
       "훈련생 소정출석일수", "실제출근일", "환산출근일", "결근일",
-      "지각/조퇴횟수", "결석환산일", "지원고용훈련일수", "출석률"
+      "지각/조퇴(결석환산일)", "지원고용훈련일수", "출석률"
     ];
 
     // ---- 엑셀에 넣을 2차원 배열(AOA) 구성 ----
@@ -782,7 +795,7 @@
       }
 
       const s = computeRowStats(t, dmax);
-      row.push(s.planned, s.actual, s.equiv, s.absent, s.lateEarlyText, s.convAbsent, s.supported, s.rateText);
+      row.push(s.planned, s.actual, s.equiv, s.absent, `${s.late} / ${s.early} (${s.convAbsent})`, s.supported, s.rateText);
       aoa.push(row);
     });
 
@@ -803,7 +816,7 @@
     for (let d=1; d<=dmax; d++) totalRow.push("");
     totalRow.push(
       totals.plannedSum, totals.actualSum, totals.equivSum, totals.absentSum,
-      totals.lateEarlyText, totals.convAbsentSum, totals.supportedSum, totals.rateAvgText
+      `${totals.lateSum} / ${totals.earlySum} (${totals.convAbsentSum})`, totals.supportedSum, totals.rateAvgText
     );
     aoa.push(totalRow);
 
@@ -946,7 +959,7 @@
       },
       batchState: { ...batchState },
       trainees: trainees.map(t => ({
-        name: t.name || "", planned: Number(t.planned || 0), daily: { ...t.daily }
+        name: t.name || "", planned: (t.planned === "" || t.planned === null || t.planned === undefined) ? "" : Number(t.planned || 0), daily: { ...t.daily }
       }))
     };
   }
@@ -971,7 +984,7 @@
     }
 
     trainees = Array.isArray(state.trainees) ? state.trainees.map(t => ({
-      name: t.name ?? "", planned: Number(t.planned || 0),
+      name: t.name ?? "", planned: (t.planned === "" || t.planned === null || t.planned === undefined) ? "" : Number(t.planned || 0),
       daily: (() => {
         const obj = {};
         if (t.daily && typeof t.daily === "object") {
