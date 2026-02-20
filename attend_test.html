@@ -74,6 +74,7 @@
       background:#fff;
     }
     .numInput { width: 70px; border:1px solid #aaa; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+    .pdfText { display: none; }
 
     .rowLabel { font-weight: 700; background: var(--bg); }
     .rightCols { background:#fcfcfc; }
@@ -100,6 +101,19 @@
       border-radius: 6px; font-size: 12px; cursor: pointer;
     }
     .miniBtn:active { transform: translateY(1px); }
+
+    /* PDF 저장 시 입력 UI 숨김 + 텍스트 표시 */
+    #printArea.pdfExport .pdfHide { display: none !important; }
+    #printArea.pdfExport .pdfText { display: inline !important; }
+    #printArea.pdfExport .nameCell { display: block; }
+    #printArea.pdfExport .tableWrap { overflow: visible; }
+    #printArea.pdfExport th,
+    #printArea.pdfExport td {
+      white-space: nowrap;
+      padding: 3px 4px;
+      font-size: 11px;
+    }
+    #printArea.pdfExport .note { display: none; }
 
     @media (max-width: 720px) {
       body { margin: 12px; }
@@ -422,6 +436,7 @@
 
     // ---- 바디: 일괄입력 셋팅 ----
     const trBatch = document.createElement("tr");
+    trBatch.className = "batchRow pdfHide";
     const tdB1 = document.createElement("td"); tdB1.textContent = " "; tdB1.className="rowLabel sticky-left";
     const tdB2 = document.createElement("td"); tdB2.className="rowLabel sticky-left-2";
 
@@ -551,9 +566,16 @@
       const nameInput = document.createElement("input");
       nameInput.type = "text"; nameInput.value = t.name; nameInput.placeholder = "성명"; nameInput.className = "nameInput";
       nameInput.addEventListener("input", () => { t.name = nameInput.value; });
+      nameInput.classList.add("pdfHide");
+
+      const nameText = document.createElement("span");
+      nameText.className = "pdfText";
+      nameText.textContent = t.name || "";
+
       const delBtn = document.createElement("button"); delBtn.type = "button"; delBtn.textContent = "삭제"; delBtn.className = "miniBtn delBtn";
       delBtn.addEventListener("click", () => deleteTraineeAt(idx));
-      wrap.appendChild(nameInput); wrap.appendChild(delBtn); tdName.appendChild(wrap); tr.appendChild(tdName);
+      delBtn.classList.add("pdfHide");
+      wrap.appendChild(nameInput); wrap.appendChild(nameText); wrap.appendChild(delBtn); tdName.appendChild(wrap); tr.appendChild(tdName);
 
       // 일자 상태 드롭다운
       for (let d = 1; d <= dmax; d++) {
@@ -582,7 +604,13 @@
           recalcAndRefresh();
         });
 
+        sel.classList.add("pdfHide");
+        const selText = document.createElement("span");
+        selText.className = "pdfText";
+        selText.textContent = sel.value;
+
         td.appendChild(sel);
+        td.appendChild(selText);
         tr.appendChild(td);
       }
 
@@ -592,7 +620,13 @@
       plannedInput.type = "number"; plannedInput.min = "0"; plannedInput.step = "1"; plannedInput.className = "numInput";
       plannedInput.value = t.planned;
       plannedInput.addEventListener("input", () => { t.planned = plannedInput.value === "" ? "" : Number(plannedInput.value || 0); recalcAndRefresh(); });
-      tdPlanned.appendChild(plannedInput); tr.appendChild(tdPlanned);
+      plannedInput.classList.add("pdfHide");
+      const plannedText = document.createElement("span");
+      plannedText.className = "pdfText";
+      plannedText.textContent = plannedInput.value === "" ? "" : String(plannedInput.value);
+      tdPlanned.appendChild(plannedInput);
+      tdPlanned.appendChild(plannedText);
+      tr.appendChild(tdPlanned);
 
       // 계산열들
       const calc = computeRowStats(t, dmax);
@@ -726,16 +760,18 @@
     stickyEls.forEach(el => { el.dataset._pos = el.style.position; el.style.position = "static"; });
 
     const element = document.getElementById("printArea");
+    element.classList.add("pdfExport");
     const opt = {
       margin: [6, 6, 6, 6],
       filename: `${fileBase}.pdf`,
       image: { type: "jpeg", quality: 0.95 },
-      html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+      html2canvas: { scale: 2, useCORS: true, scrollY: 0, windowWidth: element.scrollWidth },
       jsPDF: { unit: "mm", format: "a4", orientation: "landscape" }
     };
 
     html2pdf().set(opt).from(element).save().finally(() => {
       stickyEls.forEach(el => { el.style.position = el.dataset._pos || ""; });
+      element.classList.remove("pdfExport");
     });
   }
 
