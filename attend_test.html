@@ -411,7 +411,7 @@
     const rightHeaders = [
       { key:"planned", label:"훈련생 소정출석일수" }, { key:"actual", label:"실제출근일" },
       { key:"equiv", label:"환산출근일" }, { key:"absent", label:"결근일" },
-      { key:"lateEarly", label:"지각조퇴횟수" }, { key:"convAbsent", label:"결석환산일" },
+      { key:"lateEarly", label:"지각/조퇴횟수" }, { key:"convAbsent", label:"결석환산일" },
       { key:"supported", label:"지원고용훈련일수" }, { key:"rate", label:"출석률" },
     ];
     for (const rh of rightHeaders) {
@@ -597,7 +597,7 @@
       // 계산열들
       const calc = computeRowStats(t, dmax);
       tr.appendChild(makeTd(calc.actual)); tr.appendChild(makeTd(calc.equiv)); tr.appendChild(makeTd(calc.absent));
-      tr.appendChild(makeTd(calc.lateEarly)); tr.appendChild(makeTd(calc.convAbsent)); tr.appendChild(makeTd(calc.supported));
+      tr.appendChild(makeTd(calc.lateEarlyText)); tr.appendChild(makeTd(calc.convAbsent)); tr.appendChild(makeTd(calc.supported));
       tr.appendChild(makeTd(calc.rateText));
 
       tbody.appendChild(tr);
@@ -612,7 +612,7 @@
     for (let d=1; d<=dmax; d++){ const td = document.createElement("td"); trSum.appendChild(td); }
     trSum.appendChild(makeTd(totals.plannedSum, true)); trSum.appendChild(makeTd(totals.actualSum, true));
     trSum.appendChild(makeTd(totals.equivSum, true)); trSum.appendChild(makeTd(totals.absentSum, true));
-    trSum.appendChild(makeTd(totals.lateEarlySum, true)); trSum.appendChild(makeTd(totals.convAbsentSum, true));
+    trSum.appendChild(makeTd(totals.lateEarlyText, true)); trSum.appendChild(makeTd(totals.convAbsentSum, true));
     trSum.appendChild(makeTd(totals.supportedSum, true)); trSum.appendChild(makeTd(totals.rateAvgText, true));
     
     tbody.appendChild(trSum);
@@ -634,34 +634,37 @@
 
   // ===== 계산 로직 =====
   function computeRowStats(t, dmax){
-    let actual = 0, absent = 0, lateEarly = 0, supported = 0;
+    let actual = 0, absent = 0, late = 0, early = 0, supported = 0;
     for (let d=1; d<=dmax; d++){
       const v = (t.daily[d] ?? "").trim();
       if (v === "/") actual++;
-      if (v === "O/") actual++;
+      if (v === "O/") { actual++; late++; }
+      if (v === "/O") early++;
       if (v === "X") absent++;
-      if (v === "O/" || v === "/O") lateEarly++;
       if (v === "=") supported++;
     }
+    const lateEarly = late + early;
     const convAbsent = Math.floor(lateEarly / 3);
     const equiv = actual - convAbsent;
     const planned = Number(t.planned || 0);
     const rate = planned > 0 ? (equiv / planned) : 0;
-    return { planned, actual, equiv, absent, lateEarly, convAbsent, supported, rate, rateText: `${Math.round(rate * 100)}%` };
+    const lateEarlyText = `${late}/${early}`;
+    return { planned, actual, equiv, absent, late, early, lateEarly, lateEarlyText, convAbsent, supported, rate, rateText: `${Math.round(rate * 100)}%` };
   }
 
   function computeTotals(dmax, activeCounts){
-    let plannedSum=0, actualSum=0, equivSum=0, absentSum=0, lateEarlySum=0, convAbsentSum=0, supportedSum=0, rateSum=0, rateCnt=0;
+    let plannedSum=0, actualSum=0, equivSum=0, absentSum=0, lateSum=0, earlySum=0, convAbsentSum=0, supportedSum=0, rateSum=0, rateCnt=0;
     for (const t of trainees){
       const s = computeRowStats(t, dmax);
       plannedSum += s.planned; actualSum += s.actual; equivSum += s.equiv; absentSum += s.absent;
-      lateEarlySum += s.lateEarly; convAbsentSum += s.convAbsent; supportedSum += s.supported;
+      lateSum += s.late; earlySum += s.early; convAbsentSum += s.convAbsent; supportedSum += s.supported;
       rateSum += s.rate; rateCnt++;
     }
     let activeSum = 0;
     for (let d=1; d<=dmax; d++) activeSum += (activeCounts[d] || 0);
     const rateAvg = rateCnt ? (rateSum / rateCnt) : 0;
-    return { plannedSum, actualSum, equivSum, absentSum, lateEarlySum, convAbsentSum, supportedSum, rateAvgText: `${Math.round(rateAvg * 100)}%`, activeSum };
+    const lateEarlyText = `${lateSum}/${earlySum}`;
+    return { plannedSum, actualSum, equivSum, absentSum, lateSum, earlySum, lateEarlyText, convAbsentSum, supportedSum, rateAvgText: `${Math.round(rateAvg * 100)}%`, activeSum };
   }
 
   function renderMeta(){
@@ -680,6 +683,13 @@
 
   function recalcAndRefresh(){ renderTable(); }
 
+  function syncPlannedDaysWithMonthly(){
+    const hasValue = monthlyDays.value !== "";
+    if (!hasValue) return;
+    const monthly = Number(monthlyDays.value || 0);
+    trainees.forEach(t => { t.planned = monthly; });
+  }
+
   // ===== 훈련생 행 추가 =====
   function addTrainee(name=""){
     const daily = {};
@@ -688,7 +698,8 @@
     for(let d=1; d<=dmax; d++) {
       if (batchState[d] && batchState[d].checked) daily[d] = batchState[d].status;
     }
-    trainees.push({ name, planned: 0, daily });
+    const planned = monthlyDays.value === "" ? 0 : Number(monthlyDays.value || 0);
+    trainees.push({ name, planned, daily });
     renderTable();
   }
 
@@ -742,7 +753,7 @@
     // 우측 계산열 헤더(표와 동일)
     const rightHeaders = [
       "훈련생 소정출석일수", "실제출근일", "환산출근일", "결근일",
-      "지각조퇴횟수", "결석환산일", "지원고용훈련일수", "출석률"
+      "지각/조퇴횟수", "결석환산일", "지원고용훈련일수", "출석률"
     ];
 
     // ---- 엑셀에 넣을 2차원 배열(AOA) 구성 ----
@@ -771,7 +782,7 @@
       }
 
       const s = computeRowStats(t, dmax);
-      row.push(s.planned, s.actual, s.equiv, s.absent, s.lateEarly, s.convAbsent, s.supported, s.rateText);
+      row.push(s.planned, s.actual, s.equiv, s.absent, s.lateEarlyText, s.convAbsent, s.supported, s.rateText);
       aoa.push(row);
     });
 
@@ -792,7 +803,7 @@
     for (let d=1; d<=dmax; d++) totalRow.push("");
     totalRow.push(
       totals.plannedSum, totals.actualSum, totals.equivSum, totals.absentSum,
-      totals.lateEarlySum, totals.convAbsentSum, totals.supportedSum, totals.rateAvgText
+      totals.lateEarlyText, totals.convAbsentSum, totals.supportedSum, totals.rateAvgText
     );
     aoa.push(totalRow);
 
@@ -905,7 +916,13 @@
     downloadXlsxBtn.addEventListener("click", downloadXLSX);
 
 
-  [orgName, trainType, monthlyDays, manager, remark, yearSel, monthSel, trainStart, trainEnd, mealStart, mealEnd]
+  monthlyDays.addEventListener("input", () => {
+    syncPlannedDaysWithMonthly();
+    updateTimeCalcs();
+    recalcAndRefresh();
+  });
+
+  [orgName, trainType, manager, remark, yearSel, monthSel, trainStart, trainEnd, mealStart, mealEnd]
     .forEach(el => el.addEventListener("input", () => { updateTimeCalcs(); recalcAndRefresh(); }));
   [yearSel, monthSel].forEach(el => el.addEventListener("change", handleYearMonthChange));
 
