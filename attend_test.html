@@ -140,6 +140,7 @@
     }
     .pdf-export-clone .rightCols { background: #fff; }
     .pdf-export-clone .pdf-cell-text { display: inline-block; min-width: 10px; }
+    .pdf-export-clone .note { display: none; }
 
   </style>
 </head>
@@ -749,10 +750,24 @@
 
     clone.querySelectorAll("button").forEach(btn => btn.remove());
 
+    // PDF에는 입력용/일괄적용 UI 행을 제외하고 결과 표만 표시
+    clone.querySelectorAll("#attTable thead tr").forEach(tr => {
+      const labelCell = tr.children[1];
+      const label = (labelCell?.textContent || "").trim();
+      if (label === "출석현황" || label === "일괄입력") tr.remove();
+    });
+
     clone.querySelectorAll("input, select, textarea").forEach(el => {
+      if (el.type === "checkbox") {
+        el.remove();
+        return;
+      }
       const span = document.createElement("span");
       span.className = "pdf-cell-text";
-      span.textContent = (el.value ?? "").toString().trim();
+      const text = el.tagName === "SELECT"
+        ? (el.options[el.selectedIndex]?.textContent ?? "")
+        : (el.value ?? "");
+      span.textContent = text.toString().trim();
       el.replaceWith(span);
     });
 
